@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>差分隐私计数查询报告</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1c2330;
+    --muted: #5d6b82;
+    --border: #dde3ec;
+    --accent: #2f5fd3;
+    --accent-soft: #e6edfd;
+    --ok: #147a45;
+    --ok-bg: #e5f5ec;
+    --bad: #b42318;
+    --bad-bg: #fdecea;
+    --warn: #9a6700;
+    --warn-bg: #fdf3d8;
+    --spent: #2f5fd3;
+    --remaining: #cfe0d8;
+    --reject: #e5484d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151c;
+      --card: #1b202b;
+      --text: #e8ecf3;
+      --muted: #9aa7bd;
+      --border: #2c3442;
+      --accent: #7ea2ff;
+      --accent-soft: #222c44;
+      --ok: #5fd49a;
+      --ok-bg: #16301f;
+      --bad: #ff8a80;
+      --bad-bg: #3a1c1a;
+      --warn: #f0c060;
+      --warn-bg: #33291a;
+      --spent: #7ea2ff;
+      --remaining: #26313c;
+      --reject: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 16px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+           gap: 12px; margin-bottom: 22px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+          padding: 14px 16px; }
+  .card .k { color: var(--muted); font-size: 12px; }
+  .card .v { font-size: 22px; font-weight: 650; margin-top: 2px; }
+  section { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+            padding: 18px; margin-bottom: 20px; }
+  section h2 { font-size: 17px; margin: 0 0 14px; }
+  .budgetbar { height: 14px; border-radius: 7px; background: var(--remaining);
+               overflow: hidden; margin: 6px 0 4px; }
+  .budgetbar > i { display: block; height: 100%; background: var(--spent); width: 0;
+                   transition: width .3s; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 820px; }
+  th, td { padding: 9px 10px; text-align: right; border-bottom: 1px solid var(--border);
+           white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; position: sticky; top: 0;
+       background: var(--card); }
+  td.qname, th.qname { text-align: left; white-space: normal; min-width: 150px; }
+  td.qdesc { color: var(--muted); font-size: 12px; text-align: left; white-space: normal;
+             min-width: 180px; }
+  tr.rejected { background: var(--bad-bg); }
+  tr.rejected td.qname::after { content: " 已拒绝"; display: inline-block; margin-left: 6px;
+       font-size: 11px; font-weight: 600; color: var(--bad); border: 1px solid currentColor;
+       border-radius: 4px; padding: 0 5px; vertical-align: middle; }
+  tr.accepted td.qname::after { content: " 已发布"; display: inline-block; margin-left: 6px;
+       font-size: 11px; font-weight: 600; color: var(--ok); border: 1px solid currentColor;
+       border-radius: 4px; padding: 0 5px; vertical-align: middle; }
+  .num-mono { font-variant-numeric: tabular-nums; }
+  .reject-reason { color: var(--bad); font-size: 12px; white-space: normal;
+                   text-align: left; min-width: 240px; }
+  .mini-bar { width: 90px; height: 8px; border-radius: 4px; background: var(--remaining);
+              display: inline-block; vertical-align: middle; overflow: hidden; }
+  .mini-bar > i { display: block; height: 100%; background: var(--spent); }
+  .finding { border: 1px solid var(--border); border-left-width: 4px; border-radius: 8px;
+             padding: 12px 14px; margin-bottom: 10px; }
+  .finding.high { border-left-color: var(--bad); background: var(--bad-bg); }
+  .finding.medium { border-left-color: var(--warn); background: var(--warn-bg); }
+  .finding.low { border-left-color: var(--accent); background: var(--accent-soft); }
+  .finding .tag { font-size: 11px; font-weight: 700; text-transform: uppercase;
+                  letter-spacing: .04em; margin-right: 8px; }
+  .finding.high .tag { color: var(--bad); }
+  .finding.medium .tag { color: var(--warn); }
+  .finding.low .tag { color: var(--accent); }
+  .finding p { margin: 6px 0 0; font-size: 13.5px; }
+  .finding .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .empty { color: var(--muted); font-size: 13px; }
+  .model { font-size: 13.5px; color: var(--muted); }
+  .model li { margin-bottom: 6px; }
+  code { background: var(--accent-soft); color: var(--accent); border-radius: 4px;
+         padding: 1px 5px; font-size: 12.5px; }
+  .filters { margin-bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .filters button { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 999px;
+       border: 1px solid var(--border); background: var(--card); color: var(--text);
+       cursor: pointer; }
+  .filters button.active { background: var(--accent); border-color: var(--accent);
+       color: #fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title">差分隐私计数查询报告</h1>
+  <div class="sub" id="subtitle"></div>
+
+  <div class="cards" id="cards"></div>
+
+  <section>
+    <h2>隐私预算消耗</h2>
+    <div class="budgetbar"><i id="budgetfill"></i></div>
+    <div class="hint" id="budgethint"></div>
+  </section>
+
+  <section>
+    <h2>逐次查询明细</h2>
+    <div class="filters">
+      <button data-f="all" class="active">全部</button>
+      <button data-f="accepted">已发布</button>
+      <button data-f="rejected">已拒绝</button>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th class="qname">查询</th>
+            <th class="qdesc">含义</th>
+            <th>申请 ε</th>
+            <th>噪声尺度 b=Δ/ε</th>
+            <th>真实值</th>
+            <th>加噪结果（原始）</th>
+            <th>发布值（取整截断）</th>
+            <th>查询前已用 ε</th>
+            <th>查询后已用 ε</th>
+            <th>剩余 ε</th>
+            <th>预算进度</th>
+            <th class="qdesc">拒绝原因</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="hint">真实值仅用于对照展示；对外发布的只有加噪结果。对加噪值四舍五入并截断到非负属于
+       后处理（post-processing），不削弱差分隐私保证。</p>
+  </section>
+
+  <section>
+    <h2>低效查询模式分析</h2>
+    <div id="findings"></div>
+  </section>
+
+  <section>
+    <h2>模型与记账规则说明</h2>
+    <ul class="model">
+      <li><strong>机制</strong>：每次计数发布为 <code>M(x)=count(x)+Lap(0,b)</code>，
+          计数查询的 L1 敏感度 Δ=1（相邻数据集相差一条记录），尺度 <code>b=Δ/ε</code>。</li>
+      <li><strong>组合</strong>：按顺序组合定理，同一数据集上依次发布 ε<sub>1</sub>,…,ε<sub>k</sub>
+          的机制整体满足 <code>(Σ ε<sub>i</sub>)-DP</code>；记账器逐笔线性累加。</li>
+      <li><strong>拒绝</strong>：当 <code>已用 ε + 本次 ε &gt; ε_total</code> 时查询被拒绝，
+          不消耗预算、不生成噪声、不发布结果，并在表中高亮。</li>
+      <li><strong>本报告适用范围</strong>：纯 ε-DP（δ=0）与简单顺序组合；不涉及高级组合、
+          Rényi DP 或 Gaussian 机制。后处理（求和、取整、截断）不再额外计费。</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+"use strict";
+const REPORT = __REPORT_DATA__;
+
+const $ = (id) => document.getElementById(id);
+const fmt = (x, d) => (x === null || x === undefined) ? "—"
+    : Number(x).toLocaleString("zh-CN", {minimumFractionDigits: d, maximumFractionDigits: d});
+const esc = (s) => String(s == null ? "" : s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+
+function render() {
+  const r = REPORT;
+  document.title = r.title;
+  $("title").textContent = r.title;
+  $("subtitle").textContent =
+      "数据集：" + r.datasetName + "（" + r.datasetSize + " 条记录） · 生成时间：" + r.generatedAt;
+
+  const pct = r.budgetTotal > 0 ? Math.min(100, r.budgetUsed / r.budgetTotal * 100) : 0;
+  const cards = [
+    ["预算上限 ε_total", fmt(r.budgetTotal, 4)],
+    ["累计已用 ε", fmt(r.budgetUsed, 4)],
+    ["剩余 ε", fmt(Math.max(0, r.budgetTotal - r.budgetUsed), 4)],
+    ["已发布 / 已拒绝", r.accepted + " / " + r.rejected],
+  ];
+  $("cards").innerHTML = cards.map(([k, v]) =>
+      '<div class="card"><div class="k">' + k + '</div><div class="v num-mono">' +
+      esc(v) + "</div></div>").join("");
+  $("budgetfill").style.width = pct.toFixed(2) + "%";
+  $("budgethint").textContent =
+      "已用 " + fmt(r.budgetUsed, 4) + " / " + fmt(r.budgetTotal, 4) +
+      "（" + pct.toFixed(1) + "%），顺序组合下总隐私损失线性累加。";
+
+  renderRows("all");
+
+  const box = $("findings");
+  if (!r.findings.length) {
+    box.innerHTML = '<p class="empty">未发现明显的低效查询模式。</p>';
+  } else {
+    box.innerHTML = r.findings.map((f) =>
+      '<div class="finding ' + f.severity + '">' +
+        '<span class="tag">' + esc(f.kind) + "</span>" +
+        '<strong>[' + esc(f.severity.toUpperCase()) + "]</strong>" +
+        "<p>" + esc(f.message) + "</p>" +
+        '<div class="meta">涉及查询序号：' +
+          f.queryIndices.map((i) => "#" + i).join("、") +
+          (f.wastedEpsilon > 0 ? " · 可避免的预算消耗 ε≈" + fmt(f.wastedEpsilon, 4) : "") +
+        "</div></div>").join("");
+  }
+}
+
+function rowHTML(q) {
+  const usedPct = Math.min(100, q.usedAfter / REPORT.budgetTotal * 100);
+  if (!q.accepted) {
+    return '<tr class="rejected">' +
+      td(q.index) + '<td class="qname">' + esc(q.name) + '</td>' +
+      '<td class="qdesc">' + esc(q.description) + "</td>" +
+      tdFmt(q.epsilon, 4) + td("—") + tdFmt(q.trueValue, 0) +
+      td("—") + td("—") +
+      tdFmt(q.usedBefore, 4) + tdFmt(q.usedAfter, 4) + tdFmt(q.remainingAfter, 4) +
+      '<td><span class="mini-bar"><i style="width:' + usedPct.toFixed(1) + '%"></i></span></td>' +
+      '<td class="reject-reason">' + esc(q.rejectReason) + "</td></tr>";
+  }
+  return '<tr class="accepted">' +
+    td(q.index) + '<td class="qname">' + esc(q.name) + '</td>' +
+    '<td class="qdesc">' + esc(q.description) + "</td>" +
+    tdFmt(q.epsilon, 4) + tdFmt(q.scale, 4) +
+    tdFmt(q.trueValue, 0) + tdFmt(q.noisyValue, 3) + tdFmt(q.publishedValue, 0) +
+    tdFmt(q.usedBefore, 4) + tdFmt(q.usedAfter, 4) + tdFmt(q.remainingAfter, 4) +
+    '<td><span class="mini-bar"><i style="width:' + usedPct.toFixed(1) + '%"></i></span></td>' +
+    '<td class="qdesc">—</td></tr>';
+}
+const td = (v) => '<td class="num-mono">' + esc(v) + "</td>";
+const tdFmt = (v, d) => '<td class="num-mono">' + fmt(v, d) + "</td>";
+
+function renderRows(filter) {
+  const list = REPORT.results.filter((q) =>
+      filter === "all" ? true : filter === "accepted" ? q.accepted : !q.accepted);
+  $("rows").innerHTML = list.length
+      ? list.map(rowHTML).join("")
+      : '<tr><td colspan="13" class="empty">无匹配查询。</td></tr>';
+}
+
+document.querySelectorAll(".filters button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".filters button").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    renderRows(btn.dataset.f);
+  });
+});
+
+render();
+</script>
+</body>
+</html>
